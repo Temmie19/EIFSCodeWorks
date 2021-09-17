@@ -1,8 +1,10 @@
 #!/usr/bin/python3
 
-from base64 import decode, encodebytes
-import sys, getopt, os.path, time, lzma, zstd, bz2, gzip
+import sys, getopt, os.path, time, lzma, zstd, bz2, gzip, huffman, collections, h5py, hdf5plugin, numpy
+from typing import Collection
 from burrows_wheeler import burrows_wheeler
+from alternate_encoding import escape_encoding, escape_decoding
+from base64_converter import base64_converter
 
 base16_strings = {"0": "10", "1": "110", "2": "111", "3": "010", "4": "0110", "5": "0010", \
     "6": "00110", "7": "00111", "8": "00110", "9": "00010", "A": "000110",\
@@ -18,20 +20,61 @@ data = open("/home/temmie19/codes/testing/mafiaTownIntro.mp3", "rb").read()
 print(len(data))
 start = time.perf_counter()
 decoded = ""
-for i in range(len(data)):
-    decoded += chr(data[i])
+decoded = data.decode("iso-8859-15")
+escapeless = escape_encoding(decoded)
+#unescaped = escape_decoding(escapeless)
+#print(len(unescaped), " vs ", len(decoded))
+#print(unescaped == decoded)
 print(len(decoded))
-rounds = len(decoded) // 16384
+rounds = len(escapeless) // 16384
 print(rounds)
 last_round = len(decoded) % 16384
-encoded_data = ""
+encoded_data = b""
+lzc = lzma.LZMACompressor(preset=9)
 for i in range(rounds + 1):
+    pre_compressed = b''
     if(i < rounds):
-        encoded_data += burrows_wheeler(decoded[i*16384:(i+1)*16384])
+        pre_compressed = burrows_wheeler(escapeless[i*16384:(i+1)*16384]).encode("iso-8859-15")
     else:
-        encoded_data += burrows_wheeler(decoded[i*16384:])
-    print(i)
-shortened_data = ""
+        pre_compressed = burrows_wheeler(escapeless[i*16384:]).encode("iso-8859-15")
+    encoded_data += lzc.compress(pre_compressed)
+test_data = encoded_data.decode("iso-8859-15")
+escapeless = escape_encoding(test_data)
+rounds = len(escapeless) // 16384
+encoded_data_two = b""
+for i in range(rounds + 1):
+    pre_compressed = b''
+    if(i < rounds):
+        pre_compressed = burrows_wheeler(escapeless[i*16384:(i+1)*16384]).encode("iso-8859-15")
+    else:
+        pre_compressed = burrows_wheeler(escapeless[i*16384:]).encode("iso-8859-15")
+    encoded_data_two += lzc.compress(pre_compressed)
+test_data = encoded_data_two.decode("iso-8859-15")
+escapeless = escape_encoding(test_data)
+rounds = len(escapeless) // 16384
+encoded_data_three = b""
+for i in range(rounds + 1):
+    pre_compressed = b''
+    if(i < rounds):
+        pre_compressed = burrows_wheeler(escapeless[i*16384:(i+1)*16384]).encode("iso-8859-15")
+    else:
+        pre_compressed = burrows_wheeler(escapeless[i*16384:]).encode("iso-8859-15")
+    encoded_data_three += lzc.compress(pre_compressed)
+test_data = encoded_data_three.decode("iso-8859-15")
+escapeless = escape_encoding(test_data)
+rounds = len(escapeless) // 16384
+encoded_data_four = b""
+for i in range(rounds + 1):
+    pre_compressed = b''
+    if(i < rounds):
+        pre_compressed = burrows_wheeler(escapeless[i*16384:(i+1)*16384]).encode("iso-8859-15")
+    else:
+        pre_compressed = burrows_wheeler(escapeless[i*16384:]).encode("iso-8859-15")
+    encoded_data_four += lzc.compress(pre_compressed)
+
+
+#encoded_data = encoded_data.encode("iso-8859-15")
+"""shortened_data = ""
 current_char = encoded_data[0]
 current_count = 0
 for i in range(len(encoded_data)):
@@ -43,13 +86,18 @@ for i in range(len(encoded_data)):
     else:
        shortened_data += current_char + chr(current_count)
        current_count = 1
-       current_char = encoded_data[i] 
+       current_char = encoded_data[i]
 print(ord(shortened_data[20]))
 encoded_data = b''
 for i in range(len(shortened_data)):
     number = int(ord(shortened_data[i]))
-    encoded_data += number.to_bytes(1, byteorder='big')
+    encoded_data += number.to_bytes(1, byteorder='big')"""
 
+f = h5py.File("mytestfile.hdf5", "rw")
+dset = f.create_dataset("autochunk", (1000, 1000), chunks=True 
+    **hdf5plugin.Blosc(cname='zstd', clevel=9, shuffle=hdf5plugin.Blosc.SHUFFLE))
+
+dset.attrs["autochunk"] = numpy.void(encoded_data)
 
 
 zstd_data = zstd.compress(encoded_data)
@@ -62,14 +110,20 @@ lzma_data_old = lzma.compress(data)
 gzip_data_old = gzip.compress(data)
 
 
-print(len(data))
-print(len(zstd_data))
-print(len(bz2_data))
-print(len(lzma_data))
-print(len(gzip_data))
+print("Original size: ", len(data))
+print("Encoded size: ", len(encoded_data))
+print("Double encoded size: ", len(encoded_data_two))
+print("Triple encoded size: ", len(encoded_data_three))
+print("Quad encoded size: ", len(encoded_data_four))
+print("ZTSD + BWT + MTF: ", len(zstd_data))
+print("BZip + BWT + MTF: ", len(bz2_data))
+print("LZMA + BWT + MTF: ", len(lzma_data))
+print("GZip + BWT + MTF: ", len(gzip_data))
 print()
-print(len(zstd_data_old))
-print(len(bz2_data_old))
-print(len(lzma_data_old))
-print(len(gzip_data_old))
+print("ZTSD: ", len(zstd_data_old))
+print("BZip: ", len(bz2_data_old))
+print("LZMA: ", len(lzma_data_old))
+print("GZip: ", len(gzip_data_old))
+print()
+print("HDF5 size", len(dset))
 print("Completed in: ", (time.perf_counter() - start), " seconds.")
